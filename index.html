@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ブラックジャック - 爆発音付き</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+      background: #0a5f1a;
+      color: white;
+      text-align: center;
+      padding: 20px;
+      line-height: 1.5;
+    }
+    .card {
+      display: inline-block;
+      width: 80px;
+      height: 120px;
+      background: white;
+      color: black;
+      border-radius: 8px;
+      margin: 5px;
+      padding: 8px;
+      font-size: 24px;
+      font-weight: bold;
+      box-shadow: 2px 2px 5px rgba(0,0,0,0.5);
+      position: relative;
+    }
+    .card-top {
+      position: absolute;
+      top: 5px;
+      left: 8px;
+      font-size: 20px;
+    }
+    .card-center {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 40px;
+      line-height: 1;
+    }
+    .card-bottom {
+      position: absolute;
+      bottom: 5px;
+      right: 8px;
+      font-size: 20px;
+      transform: rotate(180deg);
+    }
+    .red { color: #e74c3c; }
+    .black { color: #2c3e50; }
+    .hidden-card {
+      background: #333;
+      color: transparent;
+      border: 2px solid #555;
+    }
+    .hidden-card::after {
+      content: "?";
+      color: white;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 40px;
+      color: rgba(255,255,255,0.7);
+    }
+    .area {
+      background: rgba(0,0,0,0.3);
+      border-radius: 15px;
+      padding: 20px;
+      margin: 20px 0;
+    }
+    .score {
+      font-size: 24px;
+      margin: 10px 0;
+      font-weight: bold;
+    }
+    .controls {
+      margin: 25px;
+    }
+    button {
+      font-size: 18px;
+      padding: 12px 24px;
+      margin: 0 10px;
+      border: none;
+      border-radius: 8px;
+      background: #3498db;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover { background: #2980b9; transform: translateY(-2px); }
+    button:active { transform: translateY(1px); }
+    #stand { background: #e74c3c; }
+    #stand:hover { background: #c0392b; }
+    #new-game { background: #2ecc71; }
+    #new-game:hover { background: #27ae60; }
+    .message {
+      font-size: 26px;
+      margin: 25px;
+      min-height: 40px;
+      padding: 15px;
+      border-radius: 10px;
+      background: rgba(0,0,0,0.4);
+      font-weight: bold;
+    }
+    .win { background: rgba(241, 196, 15, 0.8); color: #2c3e50; }
+    .lose { background: rgba(231, 76, 60, 0.8); }
+    .draw { background: rgba(149, 165, 166, 0.8); }
+    .explode { 
+      animation: explodeAnim 0.5s; 
+      background: radial-gradient(circle, rgba(231,76,60,0.9) 0%, rgba(192,57,43,0.9) 70%, rgba(140,40,30,0.9) 100%);
+    }
+    @keyframes explodeAnim {
+      0% { transform: scale(1); box-shadow: 0 0 0px rgba(255,0,0,0); }
+      50% { transform: scale(1.2); box-shadow: 0 0 50px rgba(255,0,0,0.8); }
+      100% { transform: scale(1); box-shadow: 0 0 0px rgba(255,0,0,0); }
+    }
+    h1 {
+      font-size: 36px;
+      margin: 20px 0;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.7);
+      color: #f1c40f;
+      text-align: center;
+    }
+    .sound-btn {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.2);
+      border: 2px solid white;
+      color: white;
+      font-size: 24px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <h1>♠ BLACKJACK ♥</h1>
+
+  <div class="area">
+    <h2>🤖 ディーラー</h2>
+    <div id="dealer-cards" style="min-height: 140px; margin: 15px 0;"></div>
+    <div class="score">SCORE: <span id="dealer-score">?</span></div>
+  </div>
+
+  <div class="message" id="message"></div>
+
+  <div class="area">
+    <h2>👤 プレイヤー</h2>
+    <div id="player-cards" style="min-height: 140px; margin: 15px 0;"></div>
+    <div class="score">SCORE: <span id="player-score">0</span></div>
+  </div>
+
+  <div class="controls">
+    <button id="hit">➕ ヒット</button>
+    <button id="stand">✋ スタンド</button>
+    <button id="new-game">🔄 新規ゲーム</button>
+  </div>
+
+  <div class="sound-btn" id="sound-toggle">🔊</div>
+
+  <script>
+    // サウンドマネージャー（爆発音付き）
+    class SoundManager {
+      constructor() {
+        this.ctx = null;
+        this.muted = false;
+        try {
+          window.AudioContext = window.AudioContext || window.webkitAudioContext;
+          this.ctx = new AudioContext();
+        } catch(e) {}
+      }
+      
+      play(freq, dur=0.1, type='sine', vol=0.2) {
+        if (this.muted || !this.ctx) return;
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const o = this.ctx.createOscillator();
+        const g = this.ctx.createGain();
+        o.type = type;
+        o.frequency.value = freq;
+        g.gain.value = vol;
+        o.connect(g);
+        g.connect(this.ctx.destination);
+        o.start();
+        o.stop(this.ctx.currentTime + dur);
+      }
+      
+      // カードを引く音
+      card() { 
+        this.play(440, 0.1, 'triangle', 0.2); 
+        setTimeout(() => this.play(660, 0.1, 'triangle', 0.2), 50); 
+      }
+      
+      // クリック音
+      click() { 
+        this.play(330, 0.05, 'sine', 0.3); 
+      }
+      
+      // 勝利音
+      win() { 
+        [523, 659, 784].forEach((f,i) => 
+          setTimeout(() => this.play(f, 0.2, 'sine', 0.4), i * 150)
+        ); 
+      }
+      
+      // 💥 爆発音（敗北時）
+      explode() {
+        if (this.muted || !this.ctx) return;
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        
+        // 爆発の低音（複数の低い周波数）
+        const explodeFreqs = [100, 80, 120, 60, 90];
+        const explodeDurs = [0.06, 0.05, 0.07, 0.04, 0.06];
+        const explodeVols = [0.7, 0.6, 0.8, 0.5, 0.7];
+        
+        explodeFreqs.forEach((freq, i) => {
+          setTimeout(() => {
+            this.play(freq, explodeDurs[i], 'square', explodeVols[i]);
+          }, i * 25);
+        });
+        
+        // 火花・破片の高音
+        setTimeout(() => {
+          this.play(880, 0.04, 'sine', 0.3);
+          setTimeout(() => this.play(1320, 0.03, 'sine', 0.2), 40);
+          setTimeout(() => this.play(1760, 0.02, 'sine', 0.15), 80);
+        }, 130);
+      }
+      
+      // ドロー音
+      draw() { 
+        this.play(440, 0.15, 'square', 0.3); 
+        setTimeout(() => this.play(440, 0.15, 'square', 0.3), 200); 
+      }
+      
+      // ゲーム開始音
+      start() {
+        [330, 440, 554].forEach((f,i) => 
+          setTimeout(() => this.play(f, 0.15, 'sine', 0.4), i * 150)
+        );
+      }
+      
+      toggle() { 
+        this.muted = !this.muted; 
+        return this.muted; 
+      }
+    }
+
+    // ゲーム設定
+    const suits = [
+      { sym: '♠', col: 'black' },
+      { sym: '♥', col: 'red' },
+      { sym: '♦', col: 'red' },
+      { sym: '♣', col: 'black' }
+    ];
+    const ranks = ['A','2','3','4','5','6','7','8','9','10','J','Q','K'];
+    let deck = [], player = [], dealer = [], active = false;
+    const sound = new SoundManager();
+
+    // デッキ作成
+    function createDeck() {
+      const d = [];
+      suits.forEach(s => ranks.forEach(r => d.push({s:s.sym,c:s.col,r:r})));
+      return d;
+    }
+
+    // シャッフル
+    function shuffle(a) {
+      for (let i=a.length-1; i>0; i--) {
+        const j = Math.floor(Math.random()*(i+1));
+        [a[i],a[j]] = [a[j],a[i]];
+      }
+    }
+
+    // スコア計算
+    function score(hand) {
+      let s=0, a=0;
+      hand.forEach(c => {
+        if (c.r==='A') { s+=11; a++; }
+        else if (['J','Q','K'].includes(c.r)) s+=10;
+        else s+=parseInt(c.r);
+      });
+      while(s>21 && a>0) { s-=10; a--; }
+      return s;
+    }
+
+    // カード表示
+    function renderCard(c, hidden=false) {
+      const div = document.createElement('div');
+      if (hidden) {
+        div.className = 'card hidden-card';
+        return div;
+      }
+      div.className = 'card';
+      div.innerHTML = `
+        <div class="card-top ${c.c}">${c.r}<br>${c.s}</div>
+        <div class="card-center ${c.c}">${c.s}</div>
+        <div class="card-bottom ${c.c}">${c.r}<br>${c.s}</div>
+      `;
+      return div;
+    }
+
+    // 手札表示
+    function render() {
+      const pc = document.getElementById('player-cards');
+      const dc = document.getElementById('dealer-cards');
+      pc.innerHTML = ''; dc.innerHTML = '';
+      
+      player.forEach(c => pc.appendChild(renderCard(c)));
+      dealer.forEach((c,i) => dc.appendChild(renderCard(c, !active && i===1)));
+      
+      document.getElementById('player-score').textContent = score(player);
+      document.getElementById('dealer-score').textContent = active ? score(dealer) : '?';
+    }
+
+    // メッセージ表示
+    function msg(text, cls='') {
+      const m = document.getElementById('message');
+      m.textContent = text;
+      m.className = 'message ' + cls;
+    }
+
+    // ブラックジャックチェック
+    function checkBJ() {
+      const ps = score(player), ds = score(dealer);
+      if (ps===21 && ds===21) { 
+        msg('🎭 ドロー！両者ブラックジャック！', 'draw'); 
+        sound.draw(); 
+        active=false; 
+        return true; 
+      }
+      if (ps===21) { 
+        msg('🎉 ブラックジャック！あなたの勝ち！', 'win'); 
+        sound.win(); 
+        active=false; 
+        return true; 
+      }
+      if (ds===21) { 
+        msg('💥 ディーラーがブラックジャック！爆発！', 'lose explode'); 
+        sound.explode(); 
+        active=false; 
+        return true; 
+      }
+      return false;
+    }
+
+    // ゲーム終了
+    function end() {
+      active = false;
+      render(); // 全カード表示
+      const ps = score(player), ds = score(dealer);
+      
+      if (ps>21) { 
+        msg('💥 バースト！爆発！あなたの負け！', 'lose explode'); 
+        sound.explode(); 
+      }
+      else if (ds>21) { 
+        msg('🎊 ディーラーがバースト！あなたの勝ち！', 'win'); 
+        sound.win(); 
+      }
+      else if (ps>ds) { 
+        msg(`🏆 あなたの勝ち！ (${ps} vs ${ds})`, 'win'); 
+        sound.win(); 
+      }
+      else if (ps<ds) { 
+        msg(`💥 あなたの負け！爆発！ (${ps} vs ${ds})`, 'lose explode'); 
+        sound.explode(); 
+      }
+      else { 
+        msg(`🤝 ドロー (${ps} vs ${ds})`, 'draw'); 
+        sound.draw(); 
+      }
+    }
+
+    // ディーラーのターン
+    function dealerTurn() {
+      render();
+      if (score(dealer) < 17) {
+        sound.card();
+        dealer.push(deck.pop());
+        setTimeout(dealerTurn, 600);
+      } else {
+        setTimeout(end, 800);
+      }
+    }
+
+    // ゲーム開始
+    function start() {
+      deck = createDeck();
+      shuffle(deck);
+      player = [deck.pop(), deck.pop()];
+      dealer = [deck.pop(), deck.pop()];
+      active = true;
+      msg('');
+      render();
+      
+      sound.start();
+      
+      if (!checkBJ()) {
+        // プレイヤーのターン
+      }
+    }
+
+    // イベント設定
+    document.getElementById('hit').onclick = () => {
+      if (!active) return;
+      sound.click(); sound.card();
+      player.push(deck.pop());
+      render();
+      if (score(player) >= 21) setTimeout(() => { 
+        if(score(player)===21) { 
+          msg('🎯 21！パーフェクト！', 'win'); 
+          sound.win(); 
+        }
+        end(); 
+      }, 300);
+    };
+
+    document.getElementById('stand').onclick = () => {
+      if (!active) return;
+      sound.click();
+      msg('🤔 ディーラーのターン...');
+      active = false;
+      setTimeout(dealerTurn, 800);
+    };
+
+    document.getElementById('new-game').onclick = () => {
+      sound.click();
+      start();
+    };
+
+    document.getElementById('sound-toggle').onclick = () => {
+      const m = sound.toggle();
+      document.getElementById('sound-toggle').textContent = m ? '🔇' : '🔊';
+      if (!m) sound.play(440, 0.1, 'sine', 0.2);
+    };
+
+    // キーボード操作
+    document.onkeydown = (e) => {
+      if (!active) return;
+      if (e.key==='h'||e.key==='H') document.getElementById('hit').click();
+      else if (e.key==='s'||e.key==='S') document.getElementById('stand').click();
+    };
+
+    // 初期化
+    window.onload = () => {
+      // クリックでAudioContextを有効化
+      document.body.onclick = () => {
+        if (sound.ctx && sound.ctx.state==='suspended') sound.ctx.resume();
+        document.body.onclick = null;
+      };
+      setTimeout(start, 300);
+    };
+  </script>
+</body>
+</html>
